@@ -1,0 +1,22 @@
+RewriteEngine On
+RewriteBase /parent-teacher-meeting-management/
+
+# Force HTTP for localhost
+RewriteCond %{HTTPS} on
+RewriteCond %{HTTP_HOST} ^localhost$ [NC]
+RewriteRule ^(.*)$ http://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# Rewrite login.php to pages/login.php
+RewriteRule ^login\.php$ pages/login.php [L]
+
+# Rewrite register.php to pages/register.php
+RewriteRule ^register\.php$ pages/register.php [L]
+
+# Handle requests to non-existent files or directories
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# PHP Error Reporting
+php_flag display_errors on
+php_value error_reporting E_ALL
