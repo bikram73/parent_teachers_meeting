@@ -29,12 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Sanitize input data
-    $parent_name = mysqli_real_escape_string($conn, $parent_name);
-    $student_name = mysqli_real_escape_string($conn, $student_name);
-    $subject = mysqli_real_escape_string($conn, $subject);
-    $meeting_date = mysqli_real_escape_string($conn, $meeting_date);
-    $meeting_time = mysqli_real_escape_string($conn, $meeting_time);
-    $status = mysqli_real_escape_string($conn, $status);
+    $parent_name = trim($parent_name);
+    $student_name = trim($student_name);
+    $subject = trim($subject);
+    $meeting_date = trim($meeting_date);
+    $meeting_time = trim($meeting_time);
+    $status = trim($status);
 
     // Get teacher's name from session
     $teacher_name = $_SESSION['user_name'] ?? 'Unknown Teacher';

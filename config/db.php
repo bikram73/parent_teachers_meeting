@@ -1,108 +1,187 @@
 <?php
-$servername = "localhost";
-$username = "root";
-$password = "";
-$database = "ptm_system";
+declare(strict_types=1);
 
-// Create connection
-$conn = new mysqli($servername, $username, $password, $database);
+final class SupabaseResult
+{
+    public int $num_rows;
+    private array $rows;
+    private int $cursor = 0;
 
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-// Create database if not exists
-$sql = "CREATE DATABASE IF NOT EXISTS " . $database;
-if ($conn->query($sql) === FALSE) {
-    die("Error creating database: " . $conn->error);
-}
-
-// Select the database
-$conn->select_db($database);
-
-// Drop users table if exists
-$sql = "DROP TABLE IF EXISTS users";
-$conn->query($sql);
-
-// Create parent table
-$sql = "CREATE TABLE IF NOT EXISTS parent_users (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-
-if ($conn->query($sql) === FALSE) {
-    die("Error creating parent table: " . $conn->error);
-}
-
-// Create teacher table
-$sql = "CREATE TABLE IF NOT EXISTS teacher_users (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
-    subject VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-
-if ($conn->query($sql) === FALSE) {
-    die("Error creating teacher table: " . $conn->error);
-}
-
-// Check if meetings table exists
-$result = $conn->query("SHOW TABLES LIKE 'meetings'");
-if ($result->num_rows == 0) {
-    // Create meetings table only if it doesn't exist
-    $sql = "CREATE TABLE meetings (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        parent_name VARCHAR(255) NOT NULL,
-        student_name VARCHAR(255) NOT NULL,
-        subject VARCHAR(255) NOT NULL,
-        teacher_name VARCHAR(255) NOT NULL,
-        meeting_date DATE NOT NULL,
-        meeting_time TIME NOT NULL,
-        status ENUM('scheduled', 'completed', 'cancelled') DEFAULT 'scheduled',
-        response_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending',
-        rejection_reason TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )";
-
-    if ($conn->query($sql) === FALSE) {
-        die("Error creating meetings table: " . $conn->error);
+    public function __construct(array $rows = [])
+    {
+        $this->rows = array_values($rows);
+        $this->num_rows = count($this->rows);
     }
-} else {
-    // Ensure columns exist, add if they don't
-    $columns_to_check = [
-        'response_status' => "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS response_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending'",
-        'rejection_reason' => "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS rejection_reason TEXT"
-    ];
 
-    foreach ($columns_to_check as $column => $alter_query) {
-        // Check if column exists
-        $check_column_query = "SHOW COLUMNS FROM meetings LIKE '$column'";
-        $column_result = $conn->query($check_column_query);
-        
-        if ($column_result->num_rows == 0) {
-            // Column does not exist, add it
-            if ($conn->query($alter_query) === FALSE) {
-                die("Error adding column $column: " . $conn->error);
-            }
-        } else {
-            // Ensure existing table has the correct default
-            $alter_query = "ALTER TABLE meetings 
-                MODIFY COLUMN response_status ENUM('pending', 'accepted', 'rejected') DEFAULT 'pending'";
-            $conn->query($alter_query);
+    public function fetch_assoc(): ?array
+    {
+        if ($this->cursor >= $this->num_rows) {
+            return null;
+        }
+
+        return $this->rows[$this->cursor++];
+    }
+}
+
+final class SupabaseStatement
+{
+    private PDOStatement $statement;
+    private array $boundParams = [];
+    public int $affected_rows = 0;
+    public string $error = '';
+
+    public function __construct(PDOStatement $statement)
+    {
+        $this->statement = $statement;
+    }
+
+    public function bind_param(string $types, &...$vars): bool
+    {
+        $this->boundParams = $vars;
+        return true;
+    }
+
+    public function execute(?array $params = null): bool
+    {
+        try {
+            $parameters = $params ?? $this->boundParams;
+            $this->statement->execute(array_values($parameters));
+            $this->affected_rows = $this->statement->rowCount();
+            return true;
+        } catch (Throwable $exception) {
+            $this->error = $exception->getMessage();
+            return false;
         }
     }
+
+    public function get_result(): SupabaseResult|false
+    {
+        try {
+            return new SupabaseResult($this->statement->fetchAll(PDO::FETCH_ASSOC));
+        } catch (Throwable $exception) {
+            $this->error = $exception->getMessage();
+            return false;
+        }
+    }
+
+    public function close(): void
+    {
+    }
 }
 
-// Function to get the appropriate table name based on role
-function getTableName($role) {
-    return $role === 'parent' ? 'parent_users' : 'teacher_users';
+final class SupabaseConnection
+{
+    private PDO $pdo;
+    public ?string $connect_error = null;
+    public string $error = '';
+
+    public function __construct()
+    {
+        $host = $this->firstEnv(['SUPABASE_DB_HOST', 'PGHOST', 'DB_HOST'], '');
+        $port = $this->firstEnv(['SUPABASE_DB_PORT', 'PGPORT', 'DB_PORT'], '5432');
+        $database = $this->firstEnv(['SUPABASE_DB_NAME', 'PGDATABASE', 'DB_NAME'], 'postgres');
+        $username = $this->firstEnv(['SUPABASE_DB_USER', 'PGUSER', 'DB_USERNAME'], 'postgres');
+        $password = $this->firstEnv(['SUPABASE_DB_PASSWORD', 'PGPASSWORD', 'DB_PASSWORD'], '');
+        $sslmode = $this->firstEnv(['SUPABASE_DB_SSLMODE', 'PGSSLMODE', 'DB_SSLMODE'], 'prefer');
+
+        if ($host === '') {
+            $this->connect_error = 'Missing database host configuration.';
+            $this->error = $this->connect_error;
+            throw new RuntimeException($this->connect_error);
+        }
+
+        try {
+            $dsn = sprintf(
+                'pgsql:host=%s;port=%s;dbname=%s;sslmode=%s',
+                $host,
+                $port,
+                $database,
+                $sslmode
+            );
+
+            $this->pdo = new PDO($dsn, $username, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (Throwable $exception) {
+            $this->connect_error = $exception->getMessage();
+            $this->error = $exception->getMessage();
+            throw new RuntimeException($exception->getMessage(), 0, $exception);
+        }
+    }
+
+    private function firstEnv(array $keys, string $default = ''): string
+    {
+        foreach ($keys as $key) {
+            $value = getenv($key);
+            if ($value !== false && $value !== '') {
+                return $value;
+            }
+        }
+
+        return $default;
+    }
+
+    public function prepare(string $sql): SupabaseStatement|false
+    {
+        try {
+            return new SupabaseStatement($this->pdo->prepare($sql));
+        } catch (Throwable $exception) {
+            $this->error = $exception->getMessage();
+            return false;
+        }
+    }
+
+    public function query(string $sql): SupabaseResult|bool
+    {
+        try {
+            $statement = $this->pdo->query($sql);
+            if ($statement === false) {
+                return false;
+            }
+
+            if ($statement->columnCount() > 0) {
+                return new SupabaseResult($statement->fetchAll(PDO::FETCH_ASSOC));
+            }
+
+            return true;
+        } catch (Throwable $exception) {
+            $this->error = $exception->getMessage();
+            return false;
+        }
+    }
+
+    public function real_escape_string(string $value): string
+    {
+        return addslashes($value);
+    }
+
+    public function begin_transaction(): bool
+    {
+        return $this->pdo->beginTransaction();
+    }
+
+    public function commit(): bool
+    {
+        return $this->pdo->commit();
+    }
+
+    public function rollback(): bool
+    {
+        return $this->pdo->rollBack();
+    }
+
+    public function select_db(string $database): bool
+    {
+        return true;
+    }
+
+    public function lastInsertId(): string
+    {
+        return $this->pdo->lastInsertId();
+    }
 }
+
+$conn = new SupabaseConnection();
 ?>

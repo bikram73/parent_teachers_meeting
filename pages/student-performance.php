@@ -122,7 +122,7 @@ if ($_SESSION['user_role'] === 'parent') {
             $result = $stmt->get_result();
         } else {
             // No subject found, create an empty result set
-            $result = new mysqli_result($conn);
+            $result = new SupabaseResult([]);
         }
     } else {
         // For other roles, show all records

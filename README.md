@@ -28,7 +28,7 @@ A comprehensive web-based application designed to streamline communication and m
 ## 🛠️ Technology Stack
 
 - **Backend**: PHP 7.4+
-- **Database**: MySQL 5.7+
+- **Database**: PostgreSQL via Supabase
 - **Frontend**: HTML5, CSS3, Bootstrap 5.1.3
 - **Server**: Apache (XAMPP recommended)
 - **Security**: PHP password hashing, prepared statements, session management
@@ -37,7 +37,7 @@ A comprehensive web-based application designed to streamline communication and m
 
 ### System Requirements
 - PHP 7.4 or higher
-- MySQL 5.7 or higher
+- PostgreSQL 14+ via Supabase
 - Apache Web Server
 - Modern web browser (Chrome, Firefox, Safari, Edge)
 
@@ -64,21 +64,24 @@ C:\xampp\htdocs\parent-teacher-meeting-management\
 ```
 
 ### Step 3: Database Configuration
-1. Open phpMyAdmin (http://localhost/phpmyadmin)
-2. Create a new database named `ptm_system`
-3. Import the `database.sql` file or let the system auto-create tables
-4. Verify database connection in `config/db.php`
+1. Create a Supabase project
+2. Open the SQL editor in Supabase and run `database.sql`
+3. Copy the Supabase database host, port, username, password, and database name from Project Settings > Database
+4. Set those values as environment variables in your hosting panel
 
 ### Step 4: Configuration
-1. Update database credentials in `config/db.php` if needed:
+1. Configure the Supabase database connection in your hosting environment:
 ```php
-$servername = "localhost";
-$username = "root";
-$password = "";
-$database = "ptm_system";
+SUPABASE_DB_HOST=...
+SUPABASE_DB_PORT=5432
+SUPABASE_DB_NAME=postgres
+SUPABASE_DB_USER=...
+SUPABASE_DB_PASSWORD=...
+SUPABASE_DB_SSLMODE=require
 ```
 
 2. Ensure proper file permissions for the `logs/` directory
+3. Create teacher invite codes in the `teacher_invite_codes` table before allowing teacher registration
 
 ### Step 5: Access Application
 1. Open your web browser
@@ -136,7 +139,11 @@ parent-teacher-meeting-management/
 
 #### `teacher_users`
 - User information for teachers
-- Fields: id, name, email, password, phone, subject, created_at
+- Fields: id, name, email, password, phone, subject, signup_code, created_at
+
+#### `teacher_invite_codes`
+- Teacher registration codes
+- Fields: id, code, is_used, teacher_user_id, used_at, created_at
 
 #### `meetings`
 - Meeting scheduling and tracking
@@ -200,12 +207,14 @@ The system will auto-create necessary database tables. You can:
 ## 🔧 Configuration
 
 ### Database Configuration
-Edit `config/db.php` to match your environment:
+Set these environment variables in your host or local `.env` file:
 ```php
-$servername = "localhost";    // Database server
-$username = "root";           // Database username
-$password = "";               // Database password
-$database = "ptm_system";     // Database name
+SUPABASE_DB_HOST=your-supabase-host
+SUPABASE_DB_PORT=5432
+SUPABASE_DB_NAME=postgres
+SUPABASE_DB_USER=postgres
+SUPABASE_DB_PASSWORD=your-password
+SUPABASE_DB_SSLMODE=require
 ```
 
 ### Apache Configuration

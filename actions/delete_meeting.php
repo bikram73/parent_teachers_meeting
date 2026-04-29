@@ -28,34 +28,34 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
 }
 
 if (isset($_GET['id'])) {
-    $id = mysqli_real_escape_string($conn, $_GET['id']);
+    $id = (int) $_GET['id'];
     
     // Begin transaction for safer deletion
-    mysqli_begin_transaction($conn);
+    $conn->begin_transaction();
     
     try {
         // First, verify the meeting exists and belongs to the teacher's subject
         $check_query = "SELECT teacher_name FROM meetings WHERE id = ?";
-        $check_stmt = mysqli_prepare($conn, $check_query);
-        mysqli_stmt_bind_param($check_stmt, "i", $id);
-        mysqli_stmt_execute($check_stmt);
-        $check_result = mysqli_stmt_get_result($check_stmt);
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("i", $id);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
         
-        if (mysqli_num_rows($check_result) === 0) {
+        if ($check_result === false || $check_result->num_rows === 0) {
             throw new Exception("Meeting not found");
         }
         
         // Delete the meeting
         $delete_query = "DELETE FROM meetings WHERE id = ?";
-        $delete_stmt = mysqli_prepare($conn, $delete_query);
-        mysqli_stmt_bind_param($delete_stmt, "i", $id);
+        $delete_stmt = $conn->prepare($delete_query);
+        $delete_stmt->bind_param("i", $id);
         
-        if (!mysqli_stmt_execute($delete_stmt)) {
+        if (!$delete_stmt->execute()) {
             throw new Exception("Failed to delete meeting");
         }
         
         // Commit transaction
-        mysqli_commit($conn);
+        $conn->commit();
         
         // Log successful deletion
         logDeletionAttempt($id, true);
@@ -67,7 +67,7 @@ if (isset($_GET['id'])) {
         
     } catch (Exception $e) {
         // Rollback transaction
-        mysqli_rollback($conn);
+        $conn->rollback();
         
         // Log failed deletion
         logDeletionAttempt($id, false, $e->getMessage());

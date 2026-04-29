@@ -9,14 +9,14 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'teacher') {
 }
 
 if (isset($_GET['id']) && isset($_GET['status'])) {
-    $id = mysqli_real_escape_string($conn, $_GET['id']);
-    $status = mysqli_real_escape_string($conn, $_GET['status']);
+    $id = (int) $_GET['id'];
+    $status = trim($_GET['status']);
     
     $query = "UPDATE meetings SET status = ? WHERE id = ?";
-    $stmt = mysqli_prepare($conn, $query);
-    mysqli_stmt_bind_param($stmt, "si", $status, $id);
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("si", $status, $id);
     
-    if (mysqli_stmt_execute($stmt)) {
+    if ($stmt->execute()) {
         header('Location: ../pages/teacher_dashboard.php?success=3');
     } else {
         header('Location: ../pages/teacher_dashboard.php?error=3');

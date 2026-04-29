@@ -1,75 +1,85 @@
--- Create database
-CREATE DATABASE IF NOT EXISTS ptm_system;
-USE ptm_system;
+-- Supabase / PostgreSQL schema
 
--- Users table
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS parent_users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     phone VARCHAR(15),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
 
 CREATE TABLE IF NOT EXISTS teacher_users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    subject NOT NULL,
     phone VARCHAR(15),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
--- Meetings table
-USE ptm_system; -- Switch to the desired database
-
-CREATE TABLE meetings (
-    id INT PRIMARY KEY AUTO_INCREMENT, -- Unique meeting ID
-    parent_name VARCHAR(255) NOT NULL, -- Name of the parent
-    student_name VARCHAR(255) NOT NULL, -- Name of the student
-    subject VARCHAR(255) NOT NULL, -- Subject of the meeting
-    meeting_date DATE NOT NULL, -- Date of the meeting
-    meeting_time TIME NOT NULL, -- Time of the meeting
-    status ENUM('scheduled', 'completed', 'cancelled') DEFAULT 'scheduled', -- Meeting status
-    response_status ENUM('accept', 'reject') DEFAULT 'accept', -- Response status for the meeting
-    rejection_reason VARCHAR(100) DEFAULT NULL, -- Reason for rejection if the meeting is rejected
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- Timestamp for record creation
+    subject VARCHAR(100) NOT NULL,
+    signup_code VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-
--- Notifications table
-CREATE TABLE notifications (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    message TEXT NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+CREATE TABLE IF NOT EXISTS teacher_invite_codes (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(100) UNIQUE NOT NULL,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    teacher_user_id BIGINT UNIQUE,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_teacher_invite_teacher
+        FOREIGN KEY (teacher_user_id)
+        REFERENCES teacher_users(id)
+        ON DELETE SET NULL
 );
 
--- Student Performance table
-CREATE TABLE student_performance (
-    id INT PRIMARY KEY AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS meetings (
+    id BIGSERIAL PRIMARY KEY,
+    parent_name VARCHAR(255) NOT NULL,
+    student_name VARCHAR(255) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    teacher_name VARCHAR(255) NOT NULL,
+    meeting_date DATE NOT NULL,
+    meeting_time TIME NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+    response_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    rejection_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT meetings_status_check CHECK (status IN ('scheduled', 'completed', 'cancelled')),
+    CONSTRAINT meetings_response_check CHECK (response_status IN ('pending', 'accepted', 'rejected'))
+);
+
+CREATE TABLE IF NOT EXISTS student_performance (
+    id BIGSERIAL PRIMARY KEY,
     usn VARCHAR(20) NOT NULL,
     student_name VARCHAR(100) NOT NULL,
     parent_name VARCHAR(100) NOT NULL,
-    marks DECIMAL(5,2) NOT NULL,
+    marks NUMERIC(5,2) NOT NULL,
     subject VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Student Parent Mapping table
-CREATE TABLE student_parent_mapping (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    usn VARCHAR(20) NOT NULL,
-    parent_id INT NOT NULL,
-    FOREIGN KEY (parent_id) REFERENCES users(id),
-    UNIQUE KEY unique_student (usn)
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Insert admin user
-INSERT INTO users (name, email, password, role) 
-VALUES ('Admin', 'admin@ptm.com', '$2y$10$8KzQ8IzAF9tXXXXXXXXXXOBhxXXXXXXXXXXXXXXXXXXXXXXXXXXXX', 'admin');
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_student_performance_updated_at ON student_performance;
+CREATE TRIGGER trigger_student_performance_updated_at
+BEFORE UPDATE ON student_performance
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();

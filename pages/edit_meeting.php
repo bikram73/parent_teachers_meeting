@@ -8,14 +8,13 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
     exit();
 }
 
-// Get meeting details
-$id = isset($_GET['id']) ? mysqli_real_escape_string($conn, $_GET['id']) : 0;
+$id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $query = "SELECT * FROM meetings WHERE id = ?";
-$stmt = mysqli_prepare($conn, $query);
-mysqli_stmt_bind_param($stmt, "i", $id);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
-$meeting = mysqli_fetch_assoc($result);
+$stmt = $conn->prepare($query);
+$stmt->bind_param("i", $id);
+$stmt->execute();
+$result = $stmt->get_result();
+$meeting = $result ? $result->fetch_assoc() : null;
 
 if (!$meeting) {
     header('Location: teacher_dashboard.php');

@@ -77,9 +77,9 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'teacher') {
                     <tbody>
                         <?php
                         $query = "SELECT * FROM meetings ORDER BY meeting_date, meeting_time";
-                        $result = mysqli_query($conn, $query);
+                        $result = $conn->query($query);
                         
-                        while ($row = mysqli_fetch_assoc($result)) {
+                        while ($row = $result->fetch_assoc()) {
                             echo "<tr>";
                             echo "<td>" . htmlspecialchars($row['parent_name']) . "</td>";
                             echo "<td>" . htmlspecialchars($row['student_name']) . "</td>";

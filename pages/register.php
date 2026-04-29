@@ -3,12 +3,13 @@ session_start();
 include '../config/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $name = $conn->real_escape_string($_POST['name']);
-    $email = $conn->real_escape_string($_POST['email']);
+    $name = trim($_POST['name']);
+    $email = trim($_POST['email']);
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $conn->real_escape_string($_POST['role']);
-    $phone = $conn->real_escape_string($_POST['phone']);
-    $subject = isset($_POST['subject']) ? $conn->real_escape_string($_POST['subject']) : '';
+    $role = trim($_POST['role']);
+    $phone = trim($_POST['phone']);
+    $subject = isset($_POST['subject']) ? trim($_POST['subject']) : '';
+    $signup_code = isset($_POST['signup_code']) ? trim($_POST['signup_code']) : '';
     
     // Get the appropriate table name
     $table = $role === 'parent' ? 'parent_users' : 'teacher_users';
@@ -26,21 +27,67 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = "Email already registered";
     } else {
         if ($role === 'teacher') {
-            $sql = "INSERT INTO $table (name, email, password, phone, subject) VALUES (?, ?, ?, ?, ?)";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("sssss", $name, $email, $password, $phone, $subject);
+            if ($signup_code === '') {
+                $error = "Teacher signup code is required";
+            } else {
+                $code_sql = "SELECT id FROM teacher_invite_codes WHERE code = ? AND is_used = FALSE";
+                $code_stmt = $conn->prepare($code_sql);
+                $code_stmt->bind_param("s", $signup_code);
+                $code_stmt->execute();
+                $code_result = $code_stmt->get_result();
+
+                if ($code_result === false || $code_result->num_rows === 0) {
+                    $error = "Invalid or already used teacher signup code";
+                } else {
+                    $conn->begin_transaction();
+
+                    try {
+                        $sql = "INSERT INTO teacher_users (name, email, password, phone, subject, signup_code) VALUES (?, ?, ?, ?, ?, ?) RETURNING id";
+                        $stmt = $conn->prepare($sql);
+                        $stmt->bind_param("ssssss", $name, $email, $password, $phone, $subject, $signup_code);
+
+                        if (!$stmt->execute()) {
+                            throw new Exception($stmt->error ?: 'Failed to register teacher');
+                        }
+
+                        $insert_result = $stmt->get_result();
+                        $insert_row = $insert_result ? $insert_result->fetch_assoc() : null;
+                        $teacher_user_id = isset($insert_row['id']) ? (int)$insert_row['id'] : 0;
+
+                        if ($teacher_user_id <= 0) {
+                            throw new Exception('Failed to retrieve teacher account ID');
+                        }
+
+                        $update_code_sql = "UPDATE teacher_invite_codes SET is_used = TRUE, teacher_user_id = ?, used_at = NOW() WHERE code = ?";
+                        $update_stmt = $conn->prepare($update_code_sql);
+                        $update_stmt->bind_param("is", $teacher_user_id, $signup_code);
+
+                        if (!$update_stmt->execute()) {
+                            throw new Exception($update_stmt->error ?: 'Failed to mark signup code as used');
+                        }
+
+                        $conn->commit();
+                        $_SESSION['success'] = "Registration successful! Please login.";
+                        header("Location: login.php");
+                        exit();
+                    } catch (Throwable $exception) {
+                        $conn->rollback();
+                        $error = "Registration failed: " . $exception->getMessage();
+                    }
+                }
+            }
         } else {
-            $sql = "INSERT INTO $table (name, email, password, phone) VALUES (?, ?, ?, ?)";
+            $sql = "INSERT INTO parent_users (name, email, password, phone) VALUES (?, ?, ?, ?)";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param("ssss", $name, $email, $password, $phone);
-        }
-        
-        if ($stmt->execute()) {
-            $_SESSION['success'] = "Registration successful! Please login.";
-            header("Location: login.php");
-            exit();
-        } else {
-            $error = "Registration failed: " . $conn->error;
+
+            if ($stmt->execute()) {
+                $_SESSION['success'] = "Registration successful! Please login.";
+                header("Location: login.php");
+                exit();
+            } else {
+                $error = "Registration failed: " . $conn->error;
+            }
         }
     }
 }
@@ -115,6 +162,11 @@ $selected_role = isset($_GET['role']) ? $_GET['role'] : '';
                             <label for="subject" class="form-label">Subject</label>
                             <input type="text" class="form-control" id="subject" name="subject" value="<?php echo isset($_POST['subject']) ? htmlspecialchars($_POST['subject']) : ''; ?>">
                         </div>
+                        <div class="mb-3" id="signupCodeField" style="display: none;">
+                            <label for="signup_code" class="form-label">Teacher Signup Code</label>
+                            <input type="text" class="form-control" id="signup_code" name="signup_code" value="<?php echo isset($_POST['signup_code']) ? htmlspecialchars($_POST['signup_code']) : ''; ?>">
+                            <small class="text-muted">Required for teacher accounts only.</small>
+                        </div>
                         <div class="mb-3">
                             <label for="password" class="form-label">Password</label>
                             <input type="password" class="form-control" id="password" name="password" required>
@@ -136,12 +188,18 @@ $selected_role = isset($_GET['role']) ? $_GET['role'] : '';
         function toggleSubject() {
             const role = document.getElementById('role').value;
             const subjectField = document.getElementById('subjectField');
+            const signupCodeField = document.getElementById('signupCodeField');
+            const signupCodeInput = document.getElementById('signup_code');
             if (role === 'teacher') {
                 subjectField.style.display = 'block';
+                signupCodeField.style.display = 'block';
                 document.getElementById('subject').required = true;
+                signupCodeInput.required = true;
             } else {
                 subjectField.style.display = 'none';
+                signupCodeField.style.display = 'none';
                 document.getElementById('subject').required = false;
+                signupCodeInput.required = false;
             }
         }
         // Call toggleSubject on page load to set initial state

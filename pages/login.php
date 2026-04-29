@@ -13,9 +13,9 @@ if (isset($_SESSION['user_id'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $email = $conn->real_escape_string($_POST['email']);
+    $email = trim($_POST['email']);
     $password = $_POST['password'];
-    $role = $_POST['role'];
+    $role = trim($_POST['role']);
     
     // Get the appropriate table name
     $table = $role === 'parent' ? 'parent_users' : 'teacher_users';
@@ -38,7 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if (password_verify($password, $user['password'])) {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['user_role'] = $role;
+            $_SESSION['user_type'] = $role;
             $_SESSION['user_name'] = $user['name'];
+            $_SESSION['name'] = $user['name'];
+            if ($role === 'teacher' && isset($user['subject'])) {
+                $_SESSION['subject'] = $user['subject'];
+            }
             
             header("Location: dashboard.php");
             exit();

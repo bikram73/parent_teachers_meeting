@@ -41,12 +41,12 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'parent') {
                         // Only show meetings for the logged-in parent
                         $parent_name = $_SESSION['name']; // Assuming the parent's name is stored in session
                         $query = "SELECT * FROM meetings WHERE parent_name = ? ORDER BY meeting_date, meeting_time";
-                        $stmt = mysqli_prepare($conn, $query);
-                        mysqli_stmt_bind_param($stmt, "s", $parent_name);
-                        mysqli_stmt_execute($stmt);
-                        $result = mysqli_stmt_get_result($stmt);
+                        $stmt = $conn->prepare($query);
+                        $stmt->bind_param("s", $parent_name);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
                         
-                        while ($row = mysqli_fetch_assoc($result)) {
+                        while ($row = $result->fetch_assoc()) {
                             echo "<tr>";
                             echo "<td>" . htmlspecialchars($row['student_name']) . "</td>";
                             echo "<td>" . htmlspecialchars($row['subject']) . "</td>";
